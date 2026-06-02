@@ -1,0 +1,9 @@
+line-length = 99
+
+[format]
+quote-style = 'single'
+
+[lint]
+select = ['E', 'F', 'I', 'W', 'UP', 'B']
+# B008: вызов в дефолтах аргументов — штатный паттерн FastAPI (Depends/Query/File).
+ignore = ['B008']

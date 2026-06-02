@@ -1,0 +1,51 @@
+# Docker Compose ТОЛЬКО для локальной разработки.
+# Один процесс app совмещает HTTP API и обработку очереди обучения
+# (тяжёлое обучение spaCy уходит в дочерний процесс, поэтому event loop не блокируется).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nerforge
+      POSTGRES_PASSWORD: nerforge
+      POSTGRES_DB: nerforge
+    ports:
+      - '5432:5432'
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U nerforge']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - '5672:5672'
+      - '15672:15672'
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      target: production
+    env_file: .env
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./src:/app/src
+      - model_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  pg_data:
+  model_data:
