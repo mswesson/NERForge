@@ -1,0 +1,36 @@
+# Запуск всего проекта NERForge одной командой из корня:
+#   docker compose up --build
+#
+# backend  → http://localhost:8000  (Swagger: /docs)
+# frontend → http://localhost:3000
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        # Какие модели spaCy скачать в образ. По умолчанию без тяжёлой lg.
+        # Добавить lg: 'ru_core_news_sm ru_core_news_md ru_core_news_lg'
+        # Только лёгкая:  'ru_core_news_sm'
+        SPACY_MODELS: 'ru_core_news_sm ru_core_news_md'
+    ports:
+      - '8000:8000'
+    environment:
+      NERFORGE_DATA_DIR: /app/data
+      NERFORGE_CORS_ORIGINS: '["http://localhost:3000"]'
+    volumes:
+      - model_data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # URL бэкенда для браузера (бэкенд опубликован на хосте).
+        VITE_API_URL: http://localhost:8000/v1
+    ports:
+      - '3000:3000'
+    depends_on:
+      - backend
+
+volumes:
+  model_data:

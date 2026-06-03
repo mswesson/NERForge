@@ -9,6 +9,9 @@ venv/
 .mypy_cache/
 
 # Артефакты обучения и моделей
-data/models/
-data/jobs/
+data/
 *.spacy
+
+# VS Code (кроме launch.json)
+.vscode/*
+!.vscode/launch.json

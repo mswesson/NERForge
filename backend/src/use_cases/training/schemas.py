@@ -2,43 +2,30 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
-class TrainingTaskMessage(BaseModel):
-    """Сообщение в очередь RabbitMQ: запуск обучения по задаче."""
-
-    job_id: int
-
-
-class TrainingCreateRequest(BaseModel):
-    """Тело запроса POST /training."""
-
-    dataset_id: int
-    samples_per_record: int = Field(10, ge=1, le=100, description='Вариантов на запись')
-
-
-class TrainingCreateResponse(BaseModel):
-    """Ответ эндпоинта POST /training — созданная задача."""
+class TrainingStartResponse(BaseModel):
+    """Ответ эндпоинта POST /train — созданная задача."""
 
     id: int
-    dataset_id: int
     status: str
-    samples_per_record: int
+    label_names: list[str]
+    base_model: str
     created_at: datetime
 
     model_config = {'from_attributes': True}
 
 
 class TrainingStatusResponse(BaseModel):
-    """Ответ эндпоинта GET /training/{id} — статус задачи."""
+    """Ответ эндпоинтов статуса/SSE — текущее состояние задачи."""
 
     id: int
-    dataset_id: int
     status: str
     progress: int
+    label_names: list[str]
+    base_model: str
     metrics: dict | None
-    model_id: int | None
     error: str | None
     created_at: datetime
     updated_at: datetime

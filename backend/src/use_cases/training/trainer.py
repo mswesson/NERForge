@@ -1,14 +1,26 @@
-"""Обучение spaCy NER-модели: подготовка .spacy, конфиг и запуск spacy train."""
+"""Обучение spaCy NER-модели: подготовка .spacy, конфиг, обучение и упаковка в zip."""
 
 import asyncio
 import json
 import random
+import shutil
 from pathlib import Path
 
 import spacy
 from spacy.tokens import DocBin
 
 from src.use_cases.training.augmentation import Sample
+
+# Базовые модели spaCy в порядке отображения. Реально скачанные определяются на лету.
+BASE_MODEL_ORDER = ('ru_core_news_sm', 'ru_core_news_md', 'ru_core_news_lg')
+SUPPORTED_BASE_MODELS = set(BASE_MODEL_ORDER)
+# Модели без статических векторов (для них не задаём initialize.vectors).
+_MODELS_WITHOUT_VECTORS = {'ru_core_news_sm'}
+
+
+def installed_base_models() -> set[str]:
+    """Возвращает множество базовых моделей, реально установленных в окружении."""
+    return {model for model in BASE_MODEL_ORDER if spacy.util.is_package(model)}
 
 
 class SpacyTrainingError(RuntimeError):
@@ -18,8 +30,11 @@ class SpacyTrainingError(RuntimeError):
 class SpacyTrainer:
     """Готовит данные и обучает spaCy NER-модель в рабочей папке задачи."""
 
-    def __init__(self, workdir: Path) -> None:
+    def __init__(self, workdir: Path, base_model: str, epochs: int, dropout: float) -> None:
         self.workdir = workdir
+        self.base_model = base_model
+        self.epochs = epochs
+        self.dropout = dropout
         self.train_path = workdir / 'train.spacy'
         self.dev_path = workdir / 'dev.spacy'
         self.config_path = workdir / 'config.cfg'
@@ -58,7 +73,13 @@ class SpacyTrainer:
         return doc_bin
 
     async def _init_config(self) -> None:
-        """Генерирует базовый конфиг spaCy для NER, оптимизированный на точность."""
+        """Генерирует базовый конфиг spaCy для NER.
+
+        Модели со статическими векторами (md/lg) обучаем в режиме accuracy и
+        подключаем их векторы. Для sm (векторов нет) используем efficiency —
+        иначе слой статических векторов падает на пустой таблице векторов.
+        """
+        optimize = 'efficiency' if self.base_model in _MODELS_WITHOUT_VECTORS else 'accuracy'
         await self._run(
             'init',
             'config',
@@ -68,21 +89,30 @@ class SpacyTrainer:
             '--pipeline',
             'ner',
             '--optimize',
-            'accuracy',
+            optimize,
             '--force',
         )
 
     async def train(self) -> tuple[Path, dict]:
-        """Запускает обучение и возвращает путь к model-best и метрики качества."""
-        await self._run(
-            'train',
-            str(self.config_path),
-            '--output',
-            str(self.output_path),
+        """Запускает обучение, упаковывает model-best в zip и возвращает (zip, метрики)."""
+        overrides = [
             '--paths.train',
             str(self.train_path),
             '--paths.dev',
             str(self.dev_path),
+            '--training.max_epochs',
+            str(self.epochs),
+            '--training.max_steps',
+            '0',  # ограничиваем обучение эпохами, а не шагами
+            '--training.dropout',
+            str(self.dropout),
+        ]
+        # Для моделей со статическими векторами подключаем их как базовые.
+        if self.base_model not in _MODELS_WITHOUT_VECTORS:
+            overrides += ['--initialize.vectors', self.base_model]
+
+        await self._run(
+            'train', str(self.config_path), '--output', str(self.output_path), *overrides
         )
 
         model_best = self.output_path / 'model-best'
@@ -96,7 +126,13 @@ class SpacyTrainer:
             'ents_p': performance.get('ents_p'),
             'ents_r': performance.get('ents_r'),
         }
-        return model_best, metrics
+
+        # Упаковываем готовую модель в zip для скачивания.
+        archive_base = str(self.workdir / 'model')
+        zip_path = await asyncio.to_thread(
+            shutil.make_archive, archive_base, 'zip', str(model_best)
+        )
+        return Path(zip_path), metrics
 
     @staticmethod
     async def _run(*args: str) -> None:

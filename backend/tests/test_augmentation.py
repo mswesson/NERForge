@@ -1,50 +1,69 @@
-"""Тесты генерации обучающих данных: корректность спанов сущностей."""
+"""Тесты генерации и сборки обучающих данных."""
 
-import random
-
-from src.use_cases.training.augmentation import build_sample, generate_dataset
+from src.use_cases.training.augmentation import (
+    ORDER_COLUMN,
+    assemble_from_order,
+    build_training_samples,
+    generate_rows,
+)
 
 
 def _assert_spans_tile_text(text: str, entities: list[tuple[int, int, str]]) -> None:
-    """Проверяет инвариант: спаны идут подряд через одиночный пробел и покрывают всю строку."""
-    # Конкатенация подстрок спанов через пробел должна давать исходный текст.
+    """Инвариант: конкатенация спанов через пробел даёт исходный текст; спаны валидны."""
     assert ' '.join(text[start:end] for start, end, _ in entities) == text
     for start, end, _ in entities:
         assert 0 <= start < end <= len(text)
         assert text[start:end].strip() != ''
 
 
-def test_spans_correct_without_noise() -> None:
-    """Без шума спаны точно указывают на значения полей."""
-    fields = {'BRAND': 'Супрастин', 'FORM': 'таблетки', 'DOSE': '25 мг', 'PACK': '№20'}
-    text, entities = build_sample(fields, random.Random(1), noise=False)
+def test_assemble_respects_order() -> None:
+    """Сборка идёт строго в заданном порядке, спаны корректны."""
+    fields = {'BRAND': 'Супрастин', 'DOSE': '10мг', 'PACK': '10 шт'}
+    text, entities = assemble_from_order(fields, ['PACK', 'BRAND', 'DOSE'])
 
+    assert text == '10 шт Супрастин 10мг'
+    assert [label for *_, label in entities] == ['PACK', 'BRAND', 'DOSE']
     _assert_spans_tile_text(text, entities)
-    # Множество значений в спанах совпадает с исходными полями (порядок перемешан).
-    assert {text[s:e] for s, e, _ in entities} == set(fields.values())
 
 
-def test_spans_correct_with_noise_and_collisions() -> None:
-    """При коллизиях значений (10мг / 10 шт) и шуме спаны остаются корректными.
+def test_generate_rows_volume_and_anchor() -> None:
+    """Размер = записи × вариаций; первая вариация чистая и в исходном порядке."""
+    records = [{'brand': 'Супрастин', 'form': 'таблетки', 'dose': '25 мг'} for _ in range(4)]
+    rows = generate_rows(
+        records,
+        5,
+        noise_ratio=0.5,
+        typo_ratio=0.2,
+        remove_whitespaces=True,
+        truncate_words=True,
+        shuffle_order=True,
+    )
 
-    Это главный регресс на баг наставника с raw_text.find().
-    """
-    fields = {'DOSE': '10мг', 'PACK': '10 шт'}
-    for seed in range(300):
-        text, entities = build_sample(fields, random.Random(seed), noise=True)
-        _assert_spans_tile_text(text, entities)
-        # Спаны не пересекаются.
-        ordered = sorted(entities)
-        for prev, current in zip(ordered, ordered[1:], strict=False):
-            assert prev[1] <= current[0]
+    assert len(rows) == 20
+    assert all(ORDER_COLUMN in row for row in rows)
+    # Первая вариация записи — исходный порядок и неизменённые значения.
+    assert rows[0][ORDER_COLUMN] == 'brand form dose'
+    assert rows[0]['brand'] == 'Супрастин'
 
 
-def test_generate_dataset_volume() -> None:
-    """Размер датасета = записи × вариантов; первый вариант записи — без шума."""
-    records = [{'A': 'альфа', 'B': 'бета'} for _ in range(3)]
-    samples = generate_dataset(records, samples_per_record=5)
+def test_training_uses_data_as_is() -> None:
+    """Шаг 2 собирает строго по __ORDER__ — ничего не перемешивает."""
+    rows = [
+        {'BRAND': 'Супрастин', 'DOSE': '10мг', 'PACK': '10 шт', ORDER_COLUMN: 'pack brand dose'}
+    ]
+    samples = build_training_samples(rows)
 
-    assert len(samples) == 15
-    # Хотя бы у части вариантов спаны валидны (выборочная проверка инварианта).
-    for text, entities in samples:
-        _assert_spans_tile_text(text, entities)
+    assert len(samples) == 1
+    text, entities = samples[0]
+    assert text == '10 шт Супрастин 10мг'
+    _assert_spans_tile_text(text, entities)
+
+
+def test_collisions_spans_correct() -> None:
+    """Совпадающие значения (10 / 10) не ломают спаны — регресс на баг с find()."""
+    rows = [{'DOSE': '10', 'PACK': '10', ORDER_COLUMN: 'dose pack'}]
+    text, entities = build_training_samples(rows)[0]
+
+    assert text == '10 10'
+    assert entities[0] == (0, 2, 'DOSE')
+    assert entities[1] == (3, 5, 'PACK')
