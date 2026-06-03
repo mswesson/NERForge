@@ -5,10 +5,6 @@ class DomainError(Exception):
     """Базовое доменное исключение."""
 
 
-class DatasetNotFoundError(DomainError):
-    """Датасет с указанным идентификатором не найден."""
-
-
 class EmptyDatasetError(DomainError):
     """CSV не содержит валидных записей или полей-меток."""
 
@@ -19,3 +15,7 @@ class TrainingJobNotFoundError(DomainError):
 
 class ModelNotFoundError(DomainError):
     """Модель с указанным идентификатором не найдена или не готова."""
+
+
+class BaseModelUnavailableError(DomainError):
+    """Выбранная базовая модель spaCy не установлена в окружении."""

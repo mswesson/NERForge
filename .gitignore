@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+*.log
+
+# Окружение
+.env
+.env.*
+!.env.example
+
+# Python (backend)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node (frontend)
+node_modules/
+dist/
+build/
+coverage/
+
+# Артефакты обучения и моделей
+backend/data/
+*.spacy

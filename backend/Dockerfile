@@ -17,12 +17,19 @@ RUN apt-get update \
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Базовые модели spaCy для русского. По умолчанию БЕЗ тяжёлой lg (~500 МБ).
+# Изменить список можно build-аргументом, например добавить lg:
+#   --build-arg SPACY_MODELS="ru_core_news_sm ru_core_news_md ru_core_news_lg"
+# или оставить только лёгкую:  --build-arg SPACY_MODELS="ru_core_news_sm"
+ARG SPACY_MODELS="ru_core_news_sm ru_core_news_md"
+RUN for model in $SPACY_MODELS; do python -m spacy download "$model"; done
+
 # --- production: код приложения ---
 FROM base AS production
 
 COPY . .
 
-# Папка для артефактов моделей и задач обучения (монтируется как volume).
-RUN mkdir -p /app/data/models /app/data/jobs
+# Папки для рабочих директорий обучения и загруженных моделей (монтируются как volume).
+RUN mkdir -p /app/data/jobs /app/data/uploaded_models
 
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

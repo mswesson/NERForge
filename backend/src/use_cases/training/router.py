@@ -1,48 +1,64 @@
-"""HTTP API use_case training: запуск обучения, статус и SSE-поток."""
+"""HTTP API обучения: запуск, статус, SSE-поток и скачивание модели."""
 
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, File, Form, UploadFile
+from fastapi.responses import FileResponse
 from sse_starlette.sse import EventSourceResponse
 
-from src.core.database import async_session_factory
-from src.core.exceptions import TrainingJobNotFoundError
-from src.use_cases.training.models import TrainingStatus
-from src.use_cases.training.repository import training_repository
-from src.use_cases.training.schemas import (
-    TrainingCreateRequest,
-    TrainingCreateResponse,
-    TrainingStatusResponse,
+from src.core.exceptions import (
+    BaseModelUnavailableError,
+    ModelNotFoundError,
+    TrainingJobNotFoundError,
 )
-from src.use_cases.training.service import TrainingService, get_training_service
+from src.use_cases.training import service
+from src.use_cases.training.schemas import TrainingStartResponse, TrainingStatusResponse
+from src.use_cases.training.store import TrainingStatus
+from src.use_cases.training.trainer import (
+    BASE_MODEL_ORDER,
+    SUPPORTED_BASE_MODELS,
+    installed_base_models,
+)
 
-router = APIRouter(prefix='/training', tags=['Обучение'])
+router = APIRouter(prefix='/train', tags=['Обучение'])
 
 # Терминальные статусы, на которых SSE-поток закрывается.
 _TERMINAL = {TrainingStatus.SUCCEEDED.value, TrainingStatus.FAILED.value}
 
 
-@router.post('/', response_model=TrainingCreateResponse)
-async def create_training(
-    payload: TrainingCreateRequest,
-    service: TrainingService = Depends(get_training_service),
-) -> TrainingCreateResponse:
-    """Создаёт задачу обучения и ставит её в очередь."""
-    job = await service.create_job(
-        dataset_id=payload.dataset_id,
-        samples_per_record=payload.samples_per_record,
+@router.get('/base-models')
+async def list_base_models() -> list[dict]:
+    """Список базовых моделей spaCy с флагом, установлена ли модель в окружении."""
+    installed = installed_base_models()
+    return [{'value': model, 'installed': model in installed} for model in BASE_MODEL_ORDER]
+
+
+@router.post('/', response_model=TrainingStartResponse)
+async def start_training(
+    file: UploadFile = File(..., description='CSV с обучающими данными (колонки = метки)'),
+    base_model: str = Form('ru_core_news_sm', description='Базовая модель spaCy'),
+    epochs: int = Form(10, ge=1, le=100, description='Максимум эпох'),
+    dropout: float = Form(0.2, ge=0.0, le=0.9, description='Коэффициент dropout'),
+) -> TrainingStartResponse:
+    """Принимает CSV и запускает обучение в фоне (предыдущий результат очищается)."""
+    chosen_model = base_model if base_model in SUPPORTED_BASE_MODELS else 'ru_core_news_sm'
+    if chosen_model not in installed_base_models():
+        raise BaseModelUnavailableError(
+            f'Базовая модель {chosen_model} не установлена. Скачайте её '
+            f'(python -m spacy download {chosen_model}) или выберите другую.'
+        )
+    content = await file.read()
+    job = await service.create_and_start(
+        content=content, base_model=chosen_model, epochs=epochs, dropout=dropout
     )
-    return TrainingCreateResponse.model_validate(job)
+    return TrainingStartResponse.model_validate(job)
 
 
 @router.get('/{job_id}', response_model=TrainingStatusResponse)
-async def get_training(
-    job_id: int,
-    service: TrainingService = Depends(get_training_service),
-) -> TrainingStatusResponse:
+async def get_training(job_id: int) -> TrainingStatusResponse:
     """Возвращает текущий статус задачи обучения."""
-    job = await service.get_status(job_id)
+    job = service.get_status(job_id)
     if job is None:
         raise TrainingJobNotFoundError(f'Задача обучения {job_id} не найдена.')
     return TrainingStatusResponse.model_validate(job)
@@ -53,11 +69,9 @@ async def stream_training(job_id: int) -> EventSourceResponse:
     """SSE-поток статуса задачи: события до достижения терминального статуса."""
 
     async def event_generator():
-        """Опрашивает БД свежей сессией и шлёт статус, пока задача не завершится."""
+        """Читает статус из памяти и шлёт события, пока задача не завершится."""
         while True:
-            async with async_session_factory() as session:
-                job = await training_repository.get_by_id(session, job_id)
-
+            job = service.get_status(job_id)
             if job is None:
                 yield {'event': 'error', 'data': json.dumps({'detail': 'job not found'})}
                 break
@@ -71,3 +85,18 @@ async def stream_training(job_id: int) -> EventSourceResponse:
             await asyncio.sleep(1)
 
     return EventSourceResponse(event_generator())
+
+
+@router.get('/{job_id}/model')
+async def download_model(job_id: int) -> FileResponse:
+    """Отдаёт zip обученной модели (только при успешном завершении)."""
+    job = service.get_status(job_id)
+    if job is None:
+        raise TrainingJobNotFoundError(f'Задача обучения {job_id} не найдена.')
+    if job.status != TrainingStatus.SUCCEEDED.value or not job.model_zip_path:
+        raise ModelNotFoundError(f'Модель для задачи {job_id} ещё не готова.')
+    return FileResponse(
+        job.model_zip_path,
+        media_type='application/zip',
+        filename=f'nerforge_model_{job_id}.zip',
+    )
