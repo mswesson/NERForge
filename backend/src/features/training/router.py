@@ -12,10 +12,10 @@ from src.core.exceptions import (
     ModelNotFoundError,
     TrainingJobNotFoundError,
 )
-from src.use_cases.training import service
-from src.use_cases.training.schemas import TrainingStartResponse, TrainingStatusResponse
-from src.use_cases.training.store import TrainingStatus
-from src.use_cases.training.trainer import (
+from src.features.training.schemas import TrainingStartResponse, TrainingStatusResponse
+from src.features.training.services import training_service
+from src.features.training.services.job_store import TrainingStatus
+from src.features.training.services.trainer_service import (
     BASE_MODEL_ORDER,
     SUPPORTED_BASE_MODELS,
     installed_base_models,
@@ -36,12 +36,12 @@ async def list_base_models() -> list[dict]:
 
 @router.post('/', response_model=TrainingStartResponse)
 async def start_training(
-    file: UploadFile = File(..., description='CSV с обучающими данными (колонки = метки)'),
+    file: UploadFile = File(..., description='JSONL с обучающими примерами'),
     base_model: str = Form('ru_core_news_sm', description='Базовая модель spaCy'),
     epochs: int = Form(10, ge=1, le=100, description='Максимум эпох'),
     dropout: float = Form(0.2, ge=0.0, le=0.9, description='Коэффициент dropout'),
 ) -> TrainingStartResponse:
-    """Принимает CSV и запускает обучение в фоне (предыдущий результат очищается)."""
+    """Принимает JSONL и запускает обучение в фоне (предыдущий результат очищается)."""
     chosen_model = base_model if base_model in SUPPORTED_BASE_MODELS else 'ru_core_news_sm'
     if chosen_model not in installed_base_models():
         raise BaseModelUnavailableError(
@@ -49,7 +49,7 @@ async def start_training(
             f'(python -m spacy download {chosen_model}) или выберите другую.'
         )
     content = await file.read()
-    job = await service.create_and_start(
+    job = await training_service.create_and_start(
         content=content, base_model=chosen_model, epochs=epochs, dropout=dropout
     )
     return TrainingStartResponse.model_validate(job)
@@ -58,7 +58,7 @@ async def start_training(
 @router.get('/{job_id}', response_model=TrainingStatusResponse)
 async def get_training(job_id: int) -> TrainingStatusResponse:
     """Возвращает текущий статус задачи обучения."""
-    job = service.get_status(job_id)
+    job = training_service.get_status(job_id)
     if job is None:
         raise TrainingJobNotFoundError(f'Задача обучения {job_id} не найдена.')
     return TrainingStatusResponse.model_validate(job)
@@ -71,7 +71,7 @@ async def stream_training(job_id: int) -> EventSourceResponse:
     async def event_generator():
         """Читает статус из памяти и шлёт события, пока задача не завершится."""
         while True:
-            job = service.get_status(job_id)
+            job = training_service.get_status(job_id)
             if job is None:
                 yield {'event': 'error', 'data': json.dumps({'detail': 'job not found'})}
                 break
@@ -90,7 +90,7 @@ async def stream_training(job_id: int) -> EventSourceResponse:
 @router.get('/{job_id}/model')
 async def download_model(job_id: int) -> FileResponse:
     """Отдаёт zip обученной модели (только при успешном завершении)."""
-    job = service.get_status(job_id)
+    job = training_service.get_status(job_id)
     if job is None:
         raise TrainingJobNotFoundError(f'Задача обучения {job_id} не найдена.')
     if job.status != TrainingStatus.SUCCEEDED.value or not job.model_zip_path:

@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -14,9 +14,9 @@ from src.core.exceptions import (
     ModelNotFoundError,
     TrainingJobNotFoundError,
 )
-from src.features.generation.router import router as generation_router
+from src.features.dataset.router import router as dataset_router
 from src.features.inference.router import router as inference_router
-from src.use_cases.training.router import router as training_router
+from src.features.training.router import router as training_router
 
 
 @asynccontextmanager
@@ -62,9 +62,6 @@ async def base_model_unavailable_handler(request: Request, exc: Exception) -> JS
     return JSONResponse(status_code=409, content={'detail': str(exc)})
 
 
-v1_router = APIRouter(prefix='/v1')
-v1_router.include_router(generation_router)
-v1_router.include_router(training_router)
-v1_router.include_router(inference_router)
-
-app.include_router(v1_router)
+app.include_router(dataset_router)
+app.include_router(training_router)
+app.include_router(inference_router)

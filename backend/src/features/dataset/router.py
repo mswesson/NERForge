@@ -1,11 +1,11 @@
-"""HTTP API шага 1: генерация обучающего CSV."""
+"""HTTP API шага 1: генерация обучающего JSONL-датасета."""
 
 import io
 
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import StreamingResponse
 
-from src.features.generation.service import generation_service
+from src.features.dataset.service import generation_service
 
 router = APIRouter(prefix='/generate', tags=['Генерация'])
 
@@ -21,7 +21,7 @@ async def generate_dataset(
     shuffle_order: bool = Form(True, description='Перемешивать порядок полей в вариациях'),
     lowercase: bool = Form(False, description='Привести все значения к нижнему регистру'),
 ) -> StreamingResponse:
-    """Синхронно генерирует обучающий CSV (вариации на строку) и отдаёт на скачивание."""
+    """Генерирует обучающий JSONL (вариации на строку) и отдаёт на скачивание."""
     content = await file.read()
     result = generation_service.generate(
         content,
@@ -35,6 +35,6 @@ async def generate_dataset(
     )
     return StreamingResponse(
         io.BytesIO(result),
-        media_type='text/csv',
-        headers={'Content-Disposition': 'attachment; filename=nerforge_dataset.csv'},
+        media_type='application/x-ndjson',
+        headers={'Content-Disposition': 'attachment; filename=nerforge_dataset.jsonl'},
     )

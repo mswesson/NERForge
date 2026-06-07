@@ -1,4 +1,4 @@
-"""Pydantic схемы use_case training."""
+"""Pydantic схемы фичи training."""
 
 from datetime import datetime
 

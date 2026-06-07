@@ -1,7 +1,7 @@
 // Клиент HTTP API бэкенда NERForge.
 // База берётся из VITE_API_URL, по умолчанию локальный бэкенд.
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000/v1";
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 // Параметры генерации датасета (шаг 1).
 export interface GenerateConfig {
