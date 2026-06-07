@@ -116,15 +116,15 @@ export default function ModelTrainer() {
   return (
     <div className="max-w-4xl mx-auto space-y-8" id="model-trainer-container">
 
-      {/* Загрузка обучающего CSV */}
+      {/* Загрузка обучающего JSONL */}
       <div className="bg-white border border-slate-200/80 rounded-2xl p-6 space-y-5 shadow-sm">
         <div>
           <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-violet-600" />
-            Обучающий датасет (CSV)
+            Обучающий датасет (JSONL)
           </h3>
           <p className="text-xs text-slate-500 mt-1">
-            Загрузите CSV, сгенерированный на шаге «Конструктор».
+            Загрузите JSONL, сгенерированный на шаге «Конструктор».
           </p>
         </div>
 
@@ -132,7 +132,7 @@ export default function ModelTrainer() {
           onClick={() => fileInputRef.current?.click()}
           className="border-2 border-dashed border-slate-200 bg-slate-50/30 hover:border-violet-400 hover:bg-violet-50/30 rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center gap-3"
         >
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".csv" className="hidden" />
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".jsonl" className="hidden" />
           <div className="p-3.5 bg-white rounded-full border border-slate-200 shadow-sm">
             <Upload className="w-6 h-6 text-violet-600" />
           </div>
@@ -141,7 +141,7 @@ export default function ModelTrainer() {
               <Check className="w-4 h-4" /> {file.name}
             </span>
           ) : (
-            <span className="text-xs font-bold text-slate-700">Выберите CSV-файл с данными для обучения</span>
+            <span className="text-xs font-bold text-slate-700">Выберите JSONL-файл с данными для обучения</span>
           )}
         </div>
       </div>

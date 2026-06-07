@@ -1,8 +1,8 @@
-"""Тесты генерации и сборки обучающих данных."""
+"""Тесты генерации датасета и сборки обучающих примеров."""
 
-from src.use_cases.training.augmentation import (
-    ORDER_COLUMN,
-    assemble_from_order,
+from src.features.dataset.service import (
+    _ORDER_COLUMN,
+    _assemble_from_order,
     build_training_samples,
     generate_rows,
 )
@@ -19,7 +19,7 @@ def _assert_spans_tile_text(text: str, entities: list[tuple[int, int, str]]) -> 
 def test_assemble_respects_order() -> None:
     """Сборка идёт строго в заданном порядке, спаны корректны."""
     fields = {'BRAND': 'Супрастин', 'DOSE': '10мг', 'PACK': '10 шт'}
-    text, entities = assemble_from_order(fields, ['PACK', 'BRAND', 'DOSE'])
+    text, entities = _assemble_from_order(fields, ['PACK', 'BRAND', 'DOSE'])
 
     assert text == '10 шт Супрастин 10мг'
     assert [label for *_, label in entities] == ['PACK', 'BRAND', 'DOSE']
@@ -28,7 +28,7 @@ def test_assemble_respects_order() -> None:
 
 def test_generate_rows_volume_and_anchor() -> None:
     """Размер = записи × вариаций; первая вариация чистая и в исходном порядке."""
-    records = [{'brand': 'Супрастин', 'form': 'таблетки', 'dose': '25 мг'} for _ in range(4)]
+    records = [{'BRAND': 'Супрастин', 'FORM': 'таблетки', 'DOSE': '25 мг'} for _ in range(4)]
     rows = generate_rows(
         records,
         5,
@@ -40,16 +40,16 @@ def test_generate_rows_volume_and_anchor() -> None:
     )
 
     assert len(rows) == 20
-    assert all(ORDER_COLUMN in row for row in rows)
+    assert all(_ORDER_COLUMN in row for row in rows)
     # Первая вариация записи — исходный порядок и неизменённые значения.
-    assert rows[0][ORDER_COLUMN] == 'brand form dose'
-    assert rows[0]['brand'] == 'Супрастин'
+    assert rows[0][_ORDER_COLUMN] == 'BRAND FORM DOSE'
+    assert rows[0]['BRAND'] == 'Супрастин'
 
 
 def test_training_uses_data_as_is() -> None:
-    """Шаг 2 собирает строго по __ORDER__ — ничего не перемешивает."""
+    """Сборка примеров идёт строго по _ORDER_COLUMN — ничего не перемешивает."""
     rows = [
-        {'BRAND': 'Супрастин', 'DOSE': '10мг', 'PACK': '10 шт', ORDER_COLUMN: 'pack brand dose'}
+        {'BRAND': 'Супрастин', 'DOSE': '10мг', 'PACK': '10 шт', _ORDER_COLUMN: 'pack brand dose'}
     ]
     samples = build_training_samples(rows)
 
@@ -61,7 +61,7 @@ def test_training_uses_data_as_is() -> None:
 
 def test_collisions_spans_correct() -> None:
     """Совпадающие значения (10 / 10) не ломают спаны — регресс на баг с find()."""
-    rows = [{'DOSE': '10', 'PACK': '10', ORDER_COLUMN: 'dose pack'}]
+    rows = [{'DOSE': '10', 'PACK': '10', _ORDER_COLUMN: 'dose pack'}]
     text, entities = build_training_samples(rows)[0]
 
     assert text == '10 10'

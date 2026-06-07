@@ -204,9 +204,9 @@ export default function DatasetGenerator({
         lowercase: config.lowercase
       });
 
-      // Считаем строки в полученном CSV (без заголовка)
-      const csvText = await blob.text();
-      const rowCount = csvText.split("\n").filter(Boolean).length - 1;
+      // Считаем строки в JSONL (каждая строка — один пример, заголовка нет)
+      const jsonlText = await blob.text();
+      const rowCount = jsonlText.split("\n").filter(Boolean).length;
 
       setGeneratedBlob(blob);
       setGeneratedCount(Math.max(rowCount, 0));
@@ -221,7 +221,7 @@ export default function DatasetGenerator({
   };
 
   const handleDownloadCsv = () => {
-    if (generatedBlob) saveBlob(generatedBlob, "nerforge_dataset.csv");
+    if (generatedBlob) saveBlob(generatedBlob, "nerforge_dataset.jsonl");
   };
 
   const copyTemplateToClipboard = () => navigator.clipboard.writeText(templateCsv);
@@ -582,7 +582,7 @@ export default function DatasetGenerator({
               id="download-csv-btn"
             >
               <Download className="w-4 h-4" />
-              <span>Скачать готовый датасет (CSV)</span>
+              <span>Скачать готовый датасет (JSONL)</span>
             </button>
           </div>
         )}

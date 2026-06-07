@@ -9,7 +9,8 @@ from pathlib import Path
 import spacy
 from spacy.tokens import DocBin
 
-from src.use_cases.training.augmentation import Sample
+# Тип одного обучающего примера: текст и список спанов (start, end, LABEL).
+Sample = tuple[str, list[tuple[int, int, str]]]
 
 # Базовые модели spaCy в порядке отображения. Реально скачанные определяются на лету.
 BASE_MODEL_ORDER = ('ru_core_news_sm', 'ru_core_news_md', 'ru_core_news_lg')
